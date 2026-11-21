@@ -382,7 +382,7 @@ impl eframe::App for Shell {
             self.frame_at=start;
         } else {
             // 用帧间隔限制刷新，绕过部分 Intel 驱动在垂直同步中的忙等待。
-            let delay=Duration::from_secs_f64(1.0/60.0).saturating_sub(self.frame_at.elapsed());
+            let delay=daozai::FRAME_INTERVAL.saturating_sub(self.frame_at.elapsed());
             if !delay.is_zero(){std::thread::sleep(delay);}
             self.frame_at=Instant::now();
         }
@@ -643,13 +643,13 @@ impl eframe::App for Shell {
                 let capture_transition=moving || (previous && !self.hidden);
                 let interactive=other_input || capture_transition;
                 if shot.is_none() || changed || interactive {
-                    // 交互结束后仍交付动画及其停稳的一帧；持续动效仍按自身的低频节奏读回。
+                    // 交互结束后仍交付动画及其停稳的一帧；持续动效按目标帧间隔读回。
                     let now=Instant::now();
                     match daozai::layered::readback_delay(self.readback_at,now,interactive,out.repaint_after) {
                         None=>{
                             self.readback_at=Some(now);
                             let data=if capture_transition && self.app.render_compat_running {
-                                egui::UserData::new(eframe::InteractiveCapture(self.frame_at+Duration::from_secs_f64(1.0/60.0)))
+                                egui::UserData::new(eframe::InteractiveCapture(self.frame_at+daozai::FRAME_INTERVAL))
                             } else {Default::default()};
                             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(data));
                         }
@@ -813,9 +813,9 @@ impl eframe::App for Shell {
         #[cfg(not(windows))] let autostart = false;
         self.app.settings_ui(ctx, autostart);
         self.app.mail_reader_ui(ctx);
-        // 翻页以帧起点为准，扣掉本帧已花的时间；入口处的限帧仍然生效。
+        // 动效以帧起点为准，扣掉本帧已花的时间；入口处的限帧仍然生效。
         #[cfg(windows)] let repaint_after=if self.hidden {Duration::from_secs(1)}
-            else if out.interactive_transition {out.repaint_after.saturating_sub(self.frame_at.elapsed())}
+            else if out.repaint_after == daozai::FRAME_INTERVAL {out.repaint_after.saturating_sub(self.frame_at.elapsed())}
             else {out.repaint_after};
         #[cfg(not(windows))] let repaint_after=out.repaint_after;
         schedule_repaint(ctx,repaint_after);
@@ -907,7 +907,7 @@ mod repaint_tests {
 
     #[test]
     fn background_repaint_keeps_the_requested_frame_interval(){
-        for fps in [60.0,30.0,20.0,10.0,1.0] {
+        for fps in [120.0,60.0,30.0,20.0,10.0,1.0] {
             let interval=Duration::from_secs_f64(1.0/fps);
             let actual=scheduled_delay(interval,false);
             assert!(actual.abs_diff(interval)<Duration::from_micros(1),"目标 {fps} 帧不应被提前唤醒：{actual:?}");

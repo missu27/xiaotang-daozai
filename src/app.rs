@@ -2253,8 +2253,12 @@ impl App {
             || self.media.playing && (self.open && self.page==0 || !self.open && !minimal_pill && self.notice.is_none() && self.media.is_music())
             || self.notice.as_ref().is_some_and(|notice|notice.meeting.is_some());
         let animating=transitioning || ambient || pet_visible && self.pet.state!=PetState::Sleeping;
-        // 交互形变保持 60 帧，媒体 30 帧；小表情 20 帧，睡眠 10 帧，静态界面每秒核对提醒。
-        let repaint_after=std::time::Duration::from_secs_f64(if transitioning{1.0/60.0}else if ambient{1.0/30.0}else if pet_visible{if self.pet.state==PetState::Sleeping{0.1}else{0.05}}else{1.0});
+        // 可见动效以 120 FPS 为目标，静态界面每秒核对提醒。
+        let repaint_after = if transitioning || ambient || pet_visible {
+            crate::FRAME_INTERVAL
+        } else {
+            std::time::Duration::from_secs(1)
+        };
         cmds.append(&mut self.pending);
         let next_hit=if side {self.side_hit_rect(win,self.progress())} else {self.hit_rect(cx,top,self.progress())};
         if page_before!=self.page && self.open {

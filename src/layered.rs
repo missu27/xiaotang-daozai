@@ -27,17 +27,11 @@ pub fn image_hash(size: [usize; 2], rgba: &[u8]) -> u64 {
     h
 }
 
-/// 画面自己在动（歌词滚动、动效）而没有用户输入时，两次读回的最小间隔：约 30 帧/秒。
-/// 每次读回都要 GPU 回传整帧、换通道再交给系统合成，2 倍缩放下每帧约 2ms，60 帧/秒会持续占掉十几个百分点的单核。
-pub const AMBIENT_READBACK: std::time::Duration = std::time::Duration::from_millis(33);
-
-/// 这一帧要不要请求下一次读回：`None` 立即请求；`Some(d)` 先等 d 再重绘、到时再请求（保证最后一帧不会漏掉）。
-/// 拖动、悬停、点击等有输入的帧保持满帧，跟手不打折扣。
-/// `pace` 是界面自己要求的重绘间隔（宠物 20 帧 / 睡眠 10 帧 / 媒体 30 帧）：读回不能比它更密。
-/// 否则每次读回产生的截图事件会再触发一帧、发现画面变了又读回，把只需 10 帧的宠物动画带到约 60 帧（#170 排查，DX12 下闲置约占 17% 单核）。
+/// 返回下一次兼容渲染读回前应等待的时长。输入帧可以立即请求读回。
+/// 常规读回遵循界面节奏与 120 FPS 的最小帧间隔。
 pub fn readback_delay(last: Option<std::time::Instant>, now: std::time::Instant, interactive: bool, pace: std::time::Duration) -> Option<std::time::Duration> {
     if interactive { return None; }
-    let interval = AMBIENT_READBACK.max(pace);
+    let interval = crate::FRAME_INTERVAL.max(pace);
     let elapsed = now.saturating_duration_since(last?);
     (elapsed < interval).then(|| interval - elapsed)
 }
@@ -303,28 +297,18 @@ mod tests {
     fn ambient_animation_readback_is_paced_but_input_stays_full_rate() {
         use std::time::{Duration, Instant};
         let now = Instant::now();
-        let media = Duration::from_millis(33);
-        assert_eq!(readback_delay(None, now, false, media), None, "第一次读回不等待");
-        assert_eq!(readback_delay(Some(now), now + Duration::from_millis(10), false, media), Some(Duration::from_millis(23)), "动画期间未到间隔时延后");
-        assert_eq!(readback_delay(Some(now), now + AMBIENT_READBACK, false, media), None, "到间隔立即读回");
-        assert_eq!(readback_delay(Some(now), now + Duration::from_millis(1), true, Duration::from_millis(100)), None, "有输入时保持满帧");
-        assert_eq!(readback_delay(Some(now), now + Duration::from_millis(1), false, Duration::from_millis(16)), Some(Duration::from_millis(32)), "界面要 60 帧时读回仍不超过约 30 次/秒");
-        // 每 16.7ms 来一帧（截图事件会不断触发新帧），持续 1 秒：读回次数跟着界面自己的节奏走。
-        let count = |pace: Duration| {
-            let (mut last, mut count) = (None, 0);
-            for frame in 0..60u64 {
-                let t = now + Duration::from_micros(frame * 16_667);
-                if readback_delay(last, t, false, pace).is_none() { last = Some(t); count += 1; }
-            }
-            count
-        };
-        assert!((28..=31).contains(&count(media)), "歌词等媒体动画约 30 次/秒，实际 {}", count(media));
-        assert!((9..=11).contains(&count(Duration::from_millis(100))), "宠物睡眠只需约 10 次/秒，实际 {}", count(Duration::from_millis(100)));
-        assert!((19..=21).contains(&count(Duration::from_millis(50))), "宠物表情约 20 次/秒，实际 {}", count(Duration::from_millis(50)));
+        let target = crate::FRAME_INTERVAL;
+        let early = Duration::from_millis(1);
+        assert_eq!(readback_delay(None, now, false, target), None);
+        assert_eq!(readback_delay(Some(now), now + early, false, target), Some(target - early));
+        assert_eq!(readback_delay(Some(now), now + target, false, target), None);
+        assert_eq!(readback_delay(Some(now), now + early, true, target), None);
+        assert_eq!(readback_delay(Some(now), now + early, false, Duration::ZERO), Some(target - early));
+        assert_eq!(readback_delay(Some(now), now + target, false, target * 2), Some(target));
     }
 
     /// 兼容渲染每次读回都会发截图命令、收到截图事件：这两步本身不能再触发重绘（vendor/egui 的修改），
-    /// 否则 egui「每个立即请求画两帧」的规则会把只需 10～20 帧的宠物动画带到 60 帧。
+    /// 否则 egui「每个立即请求画两帧」的规则会让低频界面产生额外重绘。
     #[test]
     fn screenshot_plumbing_does_not_request_extra_frames() {
         use eframe::egui;

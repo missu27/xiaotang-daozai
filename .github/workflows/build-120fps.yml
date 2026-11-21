@@ -1,0 +1,22 @@
+name: 岛仔 120 FPS Windows 免安装包
+on:
+  push:
+    branches: [build/daozai-120fps]
+permissions:
+  contents: read
+jobs:
+  portable:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 构建并打包
+        shell: pwsh
+        run: |
+          $compiler = ./scripts/get-nsis.ps1 -Directory $env:RUNNER_TEMP
+          ./scripts/package.ps1 -NsisCompiler $compiler
+      - name: 上传免安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: Daozai-120FPS-Windows-x64
+          path: dist/*-windows-x64.zip
+          if-no-files-found: error

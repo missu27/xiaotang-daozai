@@ -5,6 +5,9 @@
 //! - `model` / `lyrics` / `smtc` / `icons`：数据、歌词、系统媒体、文件图标
 //! - `native` / `tray`：仅 Windows 的窗口区域、命中穿透与托盘
 
+/// Target interval for active UI animation and Windows rendering.
+pub const FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_nanos(8_333_333);
+
 pub mod display_layout;
 pub mod diagnostics_tool;
 pub mod rtl_text;
