@@ -2882,8 +2882,8 @@ impl App {
             crate::FRAME_INTERVAL
         } else {
             std::time::Duration::from_secs(1)
-        };
-            .min(canvas_repaint.unwrap_or(std::time::Duration::MAX));
+        }
+        .min(canvas_repaint.unwrap_or(std::time::Duration::MAX));
         cmds.append(&mut self.pending);
         let next_hit=if side {self.side_hit_rect(win,self.progress(),self.page_height.pos).translate(offset)} else {orient(self.hit_rect(cx,top,self.progress()))};
         #[cfg(feature="sdk-js")]
