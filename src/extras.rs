@@ -2232,6 +2232,16 @@ impl App {
                         });
                         settings_label(ui,"岛体显示");
                         settings_card(ui,|ui|{
+                            use crate::model::IslandFrameRate::{Fps60, Fps120};
+                            let before = self.settings.island_frame_rate;
+                            settings_control_row_right(ui, "帧率", |ui| {
+                                settings_segmented(ui, &mut self.settings.island_frame_rate,
+                                    &[(Fps60, "60 FPS"), (Fps120, "120 FPS")], 72.0);
+                            });
+                            if before != self.settings.island_frame_rate {
+                                ctx.request_repaint_of(egui::ViewportId::ROOT);
+                            }
+                            ui.separator();
                             let mut minimal=self.settings.minimal;
                             setting_row(ui,"极简刘海","收起时显示一条细线",&mut minimal);
                             if minimal!=self.settings.minimal {self.set_minimal(minimal);}

@@ -27,10 +27,10 @@ pub fn image_hash(size: [usize; 2], rgba: &[u8]) -> u64 {
     h
 }
 
-/// 常规读回遵循界面节奏与 120 FPS 的最小间隔，输入帧可立即请求。
-pub fn readback_delay(last: Option<std::time::Instant>, now: std::time::Instant, interactive: bool, pace: std::time::Duration) -> Option<std::time::Duration> {
+/// 常规读回遵循界面节奏与所选帧率的最小间隔，输入帧可立即请求。
+pub fn readback_delay(last: Option<std::time::Instant>, now: std::time::Instant, interactive: bool, pace: std::time::Duration, frame_interval: std::time::Duration) -> Option<std::time::Duration> {
     if interactive { return None; }
-    let interval = crate::FRAME_INTERVAL.max(pace);
+    let interval = frame_interval.max(pace);
     let elapsed = now.saturating_duration_since(last?);
     (elapsed < interval).then(|| interval - elapsed)
 }
@@ -320,14 +320,18 @@ mod tests {
     fn ambient_animation_readback_is_paced_but_input_stays_full_rate() {
         use std::time::{Duration, Instant};
         let now = Instant::now();
-        let target = crate::FRAME_INTERVAL;
+        use crate::model::IslandFrameRate::{Fps60, Fps120};
         let early = Duration::from_millis(1);
-        assert_eq!(readback_delay(None, now, false, target), None);
-        assert_eq!(readback_delay(Some(now), now + early, false, target), Some(target - early));
-        assert_eq!(readback_delay(Some(now), now + target, false, target), None);
-        assert_eq!(readback_delay(Some(now), now + early, true, target), None);
-        assert_eq!(readback_delay(Some(now), now + early, false, Duration::ZERO), Some(target - early));
-        assert_eq!(readback_delay(Some(now), now + target, false, target * 2), Some(target));
+        for (rate, nanos) in [(Fps60, 16_666_666), (Fps120, 8_333_333)] {
+            let target = rate.interval();
+            assert_eq!(target.as_nanos(), nanos);
+            assert_eq!(readback_delay(None, now, false, target, target), None);
+            assert_eq!(readback_delay(Some(now), now + early, false, target, target), Some(target - early));
+            assert_eq!(readback_delay(Some(now), now + target, false, target, target), None);
+            assert_eq!(readback_delay(Some(now), now + early, true, target, target), None);
+            assert_eq!(readback_delay(Some(now), now + early, false, Duration::ZERO, target), Some(target - early));
+            assert_eq!(readback_delay(Some(now), now + target, false, target * 2, target), Some(target));
+        }
     }
 
     /// 兼容渲染每次读回都会发截图命令、收到截图事件：这两步本身不能再触发重绘（vendor/egui 的修改），

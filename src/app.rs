@@ -2879,7 +2879,7 @@ impl App {
         let animating=transitioning || ambient || canvas_animating || pet_visible && self.pet.state!=PetState::Sleeping;
         // 可见动效以 120 FPS 为目标，静态界面每秒核对提醒。
         let repaint_after = if transitioning || ambient || pet_visible {
-            crate::FRAME_INTERVAL
+            self.settings.island_frame_rate.interval()
         } else {
             std::time::Duration::from_secs(1)
         }

@@ -17,7 +17,7 @@ struct Shell {
     t0: Instant,
     #[cfg(windows)]
     frame_at: Instant,
-    /// 兼容渲染上一次请求读回画面的时刻（无输入的持续动画按约 30 帧/秒读回）。
+    /// 兼容渲染上一次请求读回画面的时刻（无输入时按界面刷新间隔读回）。
     #[cfg(windows)]
     readback_at: Option<Instant>,
     #[cfg(windows)]
@@ -620,6 +620,8 @@ impl eframe::App for Shell {
         // 设置里改了岛体大小：下一帧起主窗口按新倍率栅格化，定位逻辑随像素比变化同步调整画布。
         #[cfg(windows)] eframe::set_root_viewport_scale(self.app.settings.island_scale());
         #[cfg(windows)]
+        let frame_interval = self.app.settings.island_frame_rate.interval();
+        #[cfg(windows)]
         thread_local!{static AFTER_INTERACTIVE_CAPTURE:std::cell::Cell<bool>=const{std::cell::Cell::new(false)};}
         #[cfg(windows)]
         if let Some(start)=_frame.interactive_frame_start {
@@ -631,7 +633,7 @@ impl eframe::App for Shell {
             self.frame_at=Instant::now();
         } else {
             // 用帧间隔限制刷新，绕过部分 Intel 驱动在垂直同步中的忙等待。
-            let delay=daozai::FRAME_INTERVAL.saturating_sub(self.frame_at.elapsed());
+            let delay=frame_interval.saturating_sub(self.frame_at.elapsed());
             if !delay.is_zero(){std::thread::sleep(delay);}
             self.frame_at=Instant::now();
         }
@@ -966,7 +968,7 @@ impl eframe::App for Shell {
                 ));
                 let changed=shot.as_ref().is_some_and(|image|native.present_frame(image.size,image.as_raw()));
                 let startup_capture=(!self.hidden && native.waiting_for_first_layered_frame())
-                    .then(||self.frame_at+daozai::FRAME_INTERVAL);
+                    .then(||self.frame_at+frame_interval);
                 // 若首张截图没产生回调，也继续尝试，直到正常交接或走轮廓回退。
                 if let Some(deadline)=startup_capture {schedule_repaint(ctx,deadline.saturating_duration_since(Instant::now()));}
                 // 动画刚停稳时也交付最后一帧，避免最终位置延迟到下一次闲置刷新。
@@ -975,13 +977,13 @@ impl eframe::App for Shell {
                 if shot.is_none() || changed || interactive {
                     // 输入结束后，短暂的切换过渡仍需逐帧交付。
                     let now=Instant::now();
-                    match daozai::layered::readback_delay(self.readback_at,now,interactive,out.repaint_after) {
+                    match daozai::layered::readback_delay(self.readback_at,now,interactive,out.repaint_after,frame_interval) {
                         None=>{
                             self.readback_at=Some(now);
                             let data=if let Some(deadline)=startup_capture {
                                 egui::UserData::new(eframe::InteractiveCapture(deadline))
                             } else if capture_transition && self.app.render_compat_running {
-                                egui::UserData::new(eframe::InteractiveCapture(self.frame_at+daozai::FRAME_INTERVAL))
+                                egui::UserData::new(eframe::InteractiveCapture(self.frame_at+frame_interval))
                             } else {Default::default()};
                             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(data));
                         }
@@ -1204,7 +1206,7 @@ impl eframe::App for Shell {
         self.app.mail_reader_ui(ctx);
         // 交互切换以帧起点为准，扣掉本帧已经花费的时间。
         #[cfg(windows)] let repaint_after=if self.hidden {Duration::from_secs(1)}
-            else if out.repaint_after == daozai::FRAME_INTERVAL {out.repaint_after.saturating_sub(self.frame_at.elapsed())}
+            else if out.repaint_after == frame_interval {out.repaint_after.saturating_sub(self.frame_at.elapsed())}
             else {out.repaint_after};
         #[cfg(not(windows))] let repaint_after=out.repaint_after;
         schedule_repaint(ctx,repaint_after);

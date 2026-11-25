@@ -8,9 +8,6 @@
 #[cfg(any(feature="sdk-js",feature="sdk-wasm"))]
 #[path="../spike/mod.rs"]
 pub mod sdk_spike;
-/// Target interval for active UI animations and Windows rendering.
-pub const FRAME_INTERVAL: std::time::Duration = std::time::Duration::from_nanos(8_333_333);
-
 pub mod display_layout;
 pub mod diagnostics_tool;
 pub mod rtl_text;
